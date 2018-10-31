@@ -41,6 +41,7 @@ namespace NLog.Config
     using NLog.Common;
     using NLog.Internal;
     using NLog.Layouts;
+    using NLog.Config.ConfigFileOperations;
 #if SILVERLIGHT
 // ReSharper disable once RedundantUsingDirective
     using System.Windows;
@@ -590,6 +591,21 @@ namespace NLog.Config
 #else
             return Path.GetFullPath(fileName);
 #endif
+        }
+
+        /// <summary>
+        /// Will save the current targets and rules to the base config file.
+        /// </summary>
+        /// <returns>Returns if the save process was successfull or not.</returns>
+        public bool PersitChanges()
+        {
+#if !NETSTANDARD1_3 && !NETSTANDARD1_5
+            XmlBasedLoggingOperations ops = new XmlBasedLoggingOperations(_originalFileName, AllTargets);
+
+            //TODO Remove test code
+            ops.AddTarget(AllTargets[0]);
+#endif
+            return false;
         }
     }
 }

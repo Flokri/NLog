@@ -241,6 +241,14 @@ namespace NLog.Config
 
             if (target == null) { throw new ArgumentNullException(nameof(target)); }
 
+
+            //Check if the current configuration file is a XmlConfiguration
+            if (this.GetType() == typeof(XmlLoggingConfiguration))
+            {        
+                var config = this as XmlLoggingConfiguration;
+                
+            }
+
             AddTargetThreadSafe(name, target, true);
         }
 

@@ -41,7 +41,11 @@ namespace NLog.Config
     using NLog.Common;
     using NLog.Internal;
     using NLog.Layouts;
+
+#if !NETSTANDARD1_3 && !NETSTANDARD1_5
     using NLog.Config.ConfigFileOperations;
+#endif 
+
 #if SILVERLIGHT
 // ReSharper disable once RedundantUsingDirective
     using System.Windows;

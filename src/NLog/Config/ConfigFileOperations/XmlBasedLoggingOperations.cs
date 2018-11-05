@@ -1,11 +1,11 @@
-﻿using System.Runtime.CompilerServices;
-
+﻿#if !NETSTANDARD1_3 && !NETSTANDARD1_5
 namespace NLog.Config.ConfigFileOperations
 {
     using System;
     using System.Xml;
     using System.Collections.Generic;
     using System.Collections.ObjectModel;
+    using System.Xml.Linq;
 
     using NLog.Common;
     using NLog.Targets;
@@ -14,7 +14,8 @@ namespace NLog.Config.ConfigFileOperations
     class XmlBasedLoggingOperations
     {
         private readonly ReadOnlyCollection<Target> _allTargets;
-        private XmlDocument _configFile;
+        private XDocument _configFile;
+        private String filename;
 
         public XmlBasedLoggingOperations(string filename, ReadOnlyCollection<Target> AllTargets)
         {
@@ -27,29 +28,27 @@ namespace NLog.Config.ConfigFileOperations
         /// </summary>
         /// <param name="filename">The filename (full path) to the original xml based configuration file.</param>
         /// <returns>A xml document representing the original nlog configiguration file.</returns>
-        private XmlDocument LoadConfigurationFile(string filename)
+        private XDocument LoadConfigurationFile(string filename)
         {
-#if !NETSTANDARD1_3 && !NETSTANDARD1_5
-            XmlDocument doc = new XmlDocument();
+            //XDocument doc = new XDocument();
 
-            XmlReaderSettings settings = new XmlReaderSettings();
-            settings.NameTable = new NameTable();
+            //XmlReaderSettings settings = new XmlReaderSettings();
+            //settings.NameTable = new NameTable();
 
-            XmlNamespaceManager ns = new XmlNamespaceManager(settings.NameTable);
-            ns.AddNamespace("xsi", "http://www.w3.org/2001/XMLSchema-instance");
+            //XmlNamespaceManager ns = new XmlNamespaceManager(settings.NameTable);
+            //ns.AddNamespace("xsi", "http://www.w3.org/2001/XMLSchema-instance");
 
-            XmlParserContext context = new XmlParserContext(null, ns, "", XmlSpace.Default);
+            //XmlParserContext context = new XmlParserContext(null, ns, "", XmlSpace.Default);
 
-            XmlReader test = XmlReader.Create(filename, settings, context);
+            //XmlReader test = XmlReader.Create(filename, settings, context);
 
-            using (XmlReader reader = XmlReader.Create(filename, settings, context))
-            {
-                doc.Load(reader);
-            }
-            return doc;
-#else
-            return null;
-#endif
+            //using (XmlReader reader = XmlReader.Create(filename, settings, context))
+            //{
+            //    doc = XDocument.Load(reader);
+            //}
+
+            this.filename = filename;
+            return XDocument.Load(filename);
         }
 
         public bool AddTarget(Target target)
@@ -67,13 +66,31 @@ namespace NLog.Config.ConfigFileOperations
         /// <returns>Returns if the target could be modified successfull.</returns>
         private bool ModifyTarget(Target target)
         {
-            //Get the right xml node
-            var node = _configFile.ChildNodes.Cast<XmlNode>().Where(x => x.Name.Equals("nlog"));
+            var targetNode = _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "targets")
+                .Elements()
+                .SingleOrDefault(x => x.Attribute("name").Value.Equals(target.Name));
+
+            if (targetNode == null) { return false; }
+
+
+
+            //convert the target in the derived target class
+            targetNode.RemoveAttributes();
+
+            var attributes = target.GetType().GetProperties().Where(x => x.GetCustomAttributes(true).Where(y=>y.GetType() == typeof(RequiredParameterAttribute))!=null);
+
+            _configFile.Save(filename);
+
 
             //return false if the target is not in the config file
-            if (node == null) { return false; }
+            //if (node == null) { return false; }
 
             return false;
+        }
+
+        private void RemoveAttributes()
+        {
+
         }
 
         /// <summary>
@@ -87,3 +104,4 @@ namespace NLog.Config.ConfigFileOperations
         }
     }
 }
+#endif

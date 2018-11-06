@@ -42,9 +42,9 @@ namespace NLog.Config
     using NLog.Internal;
     using NLog.Layouts;
 
-#if !NETSTANDARD1_3 && !NETSTANDARD1_5
+#if !NETSTANDARD1_3 && !NETSTANDARD1_5 && !NETSTANDARD2_0 && !NET35 && !NET40
     using NLog.Config.ConfigFileOperations;
-#endif 
+#endif
 
 #if SILVERLIGHT
 // ReSharper disable once RedundantUsingDirective
@@ -597,19 +597,19 @@ namespace NLog.Config
 #endif
         }
 
+#if !NETSTANDARD1_3 && !NETSTANDARD1_5 && !NETSTANDARD2_0 && !NET35 && !NET40
         /// <summary>
         /// Will save the current targets and rules to the base config file.
         /// </summary>
         /// <returns>Returns if the save process was successfull or not.</returns>
         public bool PersitChanges()
         {
-#if !NETSTANDARD1_3 && !NETSTANDARD1_5
             XmlBasedLoggingOperations ops = new XmlBasedLoggingOperations(_originalFileName, AllTargets);
 
-            //TODO Remove test code
+            //TODO: Remove test code
             ops.AddTarget(AllTargets[0]);
-#endif
             return false;
         }
+#endif
     }
 }

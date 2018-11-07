@@ -19,7 +19,9 @@ namespace NLog.Config.ConfigFileOperations
     {
         private readonly ReadOnlyCollection<Target> _allTargets;
         private XDocument _configFile;
-        private String filename;
+        private String _filename;
+        private XNamespace _xmlns;
+        private XNamespace _xsi;
 
         public XmlBasedLoggingOperations(string filename, ReadOnlyCollection<Target> AllTargets)
         {
@@ -34,7 +36,9 @@ namespace NLog.Config.ConfigFileOperations
         /// <returns>A xml document representing the original nlog configiguration file.</returns>
         private XDocument LoadConfigurationFile(string filename)
         {
-            this.filename = filename;
+            _xmlns = "http://www.nlog-project.org/schemas/NLog.xsd";
+            _xsi = XNamespace.Get("http://www.w3.org/2001/XMLSchema-instance");
+            _filename = filename;
             return XDocument.Load(filename);
         }
 
@@ -102,7 +106,9 @@ namespace NLog.Config.ConfigFileOperations
             try
             {
                 //Get all properties with values
-                List<PropertyInfo> properties = PropertyHelper.GetAllReadableProperties(target.GetType()).Where(x => x.GetValue(target) != null).ToList();
+                List<PropertyInfo> properties = PropertyHelper.GetAllReadableProperties(target.GetType())
+                    .Where(p => p.CustomAttributes.Where(c=>c.AttributeType == typeof(ArrayParameterAttribute)).ToList().Count == 0 && p.GetValue(target) != null && !p.Name.Equals("Name")).ToList();
+
 
                 //filter out all array params
                 PropertyInfo param = properties.FirstOrDefault(x => x.Name.Equals("Parameters"));
@@ -112,38 +118,56 @@ namespace NLog.Config.ConfigFileOperations
                     .Where(z => z.GetValue(target) != null)
                     .ToList();
 
-                if (param != null)
-                {
-                    //TODO: uncomment when finish with testing
-                    //properties.Remove(param);
+                //get the name and type property and add them as attribute
+                XElement elem = new XElement("target",
+                        new XAttribute("name", target.Name),
+                        new XAttribute("type", target.GetType().Name.Replace("Target", ""))
+                    );
 
-                    //get type of the parameter Property
-                    Type paramType = PropertyHelper.GetArrayItemType(param);
-                }
-
-                //add the properties to the target node (as attributes)
-                foreach (PropertyInfo property in properties) { targetNode.Add(new XAttribute(property.Name, property.GetValue(target))); }
+                //add the properties to the target node (as attributes) (except name and type)
+                foreach (PropertyInfo property in properties) { elem.Add(new XElement(property.Name, property.GetValue(target))); }
 
                 //add all array params 
                 foreach (PropertyInfo arrayParam in arrayParams)
                 {
-                    Type arrayType = PropertyHelper.GetArrayItemType(arrayParam);
-                    dynamic value = Convert.ChangeType(arrayParam.GetValue(target), arrayType);
-
-                    if (value.Count() > 0)
+                    try
                     {
-                        foreach(object entry in value)
-                        {
+                        //get the name for the array sub node
+                        String arrayName = arrayParam.CustomAttributes
+                            .First(x => x.AttributeType == typeof(ArrayParameterAttribute))
+                            .ConstructorArguments.ToList()[1].Value
+                            .ToString();
 
+                        Type arrayType = PropertyHelper.GetArrayItemType(arrayParam);
+                        dynamic value = arrayParam.GetValue(target);
+
+                        if (value.Count > 0)
+                        {
+                            foreach (dynamic entry in value)
+                            {
+                                elem.Add(new XElement(arrayName, new XAttribute("name", entry.Name), new XAttribute("layout", entry.Layout.OriginalText)));
+                            }
                         }
                     }
-
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(e);
+                        continue;
+                    }
                 }
+
+                (from node in targetNode.DescendantsAndSelf()
+                 where node is XElement
+                 from attr in node.Attributes()
+                 where attr.IsNamespaceDeclaration && (attr.Name.LocalName == "xmlns" | attr.Name.LocalName.StartsWith("xmlns:"))
+                 select attr).All(attr => { attr.Remove(); return true; });
+
+
 
                 //add subnodes to the target for each parameter property
 
                 //save the modified target to the xml .config file
-                _configFile.Save(filename);
+                _configFile.Save(_filename);
 
                 return true;
             }

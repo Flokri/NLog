@@ -4,12 +4,11 @@
 namespace NLog.Config.ConfigFileOperations
 {
     using System;
-    using System.Xml;
+    using System.IO;
     using System.Collections.Generic;
     using System.Collections.ObjectModel;
     using System.Xml.Linq;
 
-    using NLog.Common;
     using NLog.Targets;
     using System.Linq;
     using System.Reflection;
@@ -20,13 +19,13 @@ namespace NLog.Config.ConfigFileOperations
         private readonly ReadOnlyCollection<Target> _allTargets;
         private XDocument _configFile;
         private String _filename;
-        private XNamespace _xmlns;
-        private XNamespace _xsi;
+        private XNamespace _ns;
 
         public XmlBasedLoggingOperations(string filename, ReadOnlyCollection<Target> AllTargets)
         {
             _allTargets = AllTargets;
             _configFile = LoadConfigurationFile(filename);
+            _ns = "http://www.nlog-project.org/schemas/NLog.xsd";
         }
 
         /// <summary>
@@ -36,8 +35,6 @@ namespace NLog.Config.ConfigFileOperations
         /// <returns>A xml document representing the original nlog configiguration file.</returns>
         private XDocument LoadConfigurationFile(string filename)
         {
-            _xmlns = "http://www.nlog-project.org/schemas/NLog.xsd";
-            _xsi = XNamespace.Get("http://www.w3.org/2001/XMLSchema-instance");
             _filename = filename;
             return XDocument.Load(filename);
         }
@@ -107,25 +104,23 @@ namespace NLog.Config.ConfigFileOperations
             {
                 //Get all properties with values
                 List<PropertyInfo> properties = PropertyHelper.GetAllReadableProperties(target.GetType())
-                    .Where(p => p.CustomAttributes.Where(c=>c.AttributeType == typeof(ArrayParameterAttribute)).ToList().Count == 0 && p.GetValue(target) != null && !p.Name.Equals("Name")).ToList();
-
+                    .Where(p => p.CustomAttributes.Where(c => c.AttributeType == typeof(ArrayParameterAttribute)).ToList().Count == 0 && p.GetValue(target) != null && !p.Name.Equals("Name")).ToList();
 
                 //filter out all array params
-                PropertyInfo param = properties.FirstOrDefault(x => x.Name.Equals("Parameters"));
-                List<PropertyInfo> arrayParams = properties
+                List<PropertyInfo> arrayParams = PropertyHelper.GetAllReadableProperties(target.GetType())
                     .Where(x => x.CustomAttributes.Count() > 0 && x.CustomAttributes
                         .FirstOrDefault(y => y.AttributeType == typeof(ArrayParameterAttribute)) != null)
                     .Where(z => z.GetValue(target) != null)
                     .ToList();
 
                 //get the name and type property and add them as attribute
-                XElement elem = new XElement("target",
+                XElement elem = new XElement(_ns + "target",
                         new XAttribute("name", target.Name),
                         new XAttribute("type", target.GetType().Name.Replace("Target", ""))
                     );
 
                 //add the properties to the target node (as attributes) (except name and type)
-                foreach (PropertyInfo property in properties) { elem.Add(new XElement(property.Name, property.GetValue(target))); }
+                foreach (PropertyInfo property in properties) { elem.Add(new XElement(_ns + property.Name, GetClearedPropertyValues(property.GetValue(target)))); }
 
                 //add all array params 
                 foreach (PropertyInfo arrayParam in arrayParams)
@@ -145,7 +140,7 @@ namespace NLog.Config.ConfigFileOperations
                         {
                             foreach (dynamic entry in value)
                             {
-                                elem.Add(new XElement(arrayName, new XAttribute("name", entry.Name), new XAttribute("layout", entry.Layout.OriginalText)));
+                                elem.Add(new XElement(_ns + arrayName, new XAttribute("name", entry.Name), new XAttribute("layout", entry.Layout.OriginalText)));
                             }
                         }
                     }
@@ -156,17 +151,9 @@ namespace NLog.Config.ConfigFileOperations
                     }
                 }
 
-                (from node in targetNode.DescendantsAndSelf()
-                 where node is XElement
-                 from attr in node.Attributes()
-                 where attr.IsNamespaceDeclaration && (attr.Name.LocalName == "xmlns" | attr.Name.LocalName.StartsWith("xmlns:"))
-                 select attr).All(attr => { attr.Remove(); return true; });
-
-
-
-                //add subnodes to the target for each parameter property
-
                 //save the modified target to the xml .config file
+                _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "targets").Elements().SingleOrDefault(x => x.Attribute("name").Value.Equals(target.Name)).Remove();
+                _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "targets").Add(elem);
                 _configFile.Save(_filename);
 
                 return true;
@@ -175,6 +162,31 @@ namespace NLog.Config.ConfigFileOperations
             {
                 Console.WriteLine(e.Message);
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Remove the "'" (tick) at the beginning and endign from a string param.
+        /// </summary>
+        /// <param name="value">The property value to "clear".</param>
+        /// <returns>Returns the property without the start and ending "'" (ticks).</returns>
+        private object GetClearedPropertyValues(object value)
+        {
+            try
+            {
+                String temp = value.ToString();
+                if (temp.StartsWith("'") && temp.EndsWith("'"))
+                {
+                    temp = temp.Remove(0, 1);
+                    temp = temp.Remove(temp.Length - 1, 1);
+                }
+
+                return temp;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                return null;
             }
         }
     }

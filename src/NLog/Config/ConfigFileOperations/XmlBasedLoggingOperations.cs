@@ -4,26 +4,24 @@
 namespace NLog.Config.ConfigFileOperations
 {
     using System;
-    using System.IO;
+    using System.Linq;
+    using System.Xml.Linq;
+    using System.Reflection;
     using System.Collections.Generic;
     using System.Collections.ObjectModel;
-    using System.Xml.Linq;
 
+    using NLog.Config;
     using NLog.Targets;
-    using System.Linq;
-    using System.Reflection;
     using NLog.Internal;
 
     class XmlBasedLoggingOperations
     {
-        private readonly ReadOnlyCollection<Target> _allTargets;
         private XDocument _configFile;
         private String _filename;
         private XNamespace _ns;
 
-        public XmlBasedLoggingOperations(string filename, ReadOnlyCollection<Target> AllTargets)
+        public XmlBasedLoggingOperations(string filename)
         {
-            _allTargets = AllTargets;
             _configFile = LoadConfigurationFile(filename);
             _ns = "http://www.nlog-project.org/schemas/NLog.xsd";
         }
@@ -39,66 +37,46 @@ namespace NLog.Config.ConfigFileOperations
             return XDocument.Load(filename);
         }
 
-        public bool AddTarget(Target target)
+        /// <summary>
+        /// Will save the target to the config file.
+        /// The method checks if the target is new or only a modified (name property).
+        /// </summary>
+        /// <param name="target">The target taht should be saved.</param>
+        /// <returns>Returns if the process was sucessfull or not.</returns>
+        public bool SaveTarget(Target target)
         {
-            if (_allTargets == null) { return false; }
+            return CreateAndSaveTarget(target);
+        }
 
-            if (_allTargets.FirstOrDefault(x => x.Name.Equals(target.Name)) == null) { return CreateTarget(target); }
-            else { return ModifyTarget(target); }
+        public bool SaveRule(LoggingRule rule)
+        {
+            return CreateAndSaveRule(rule);
         }
 
         /// <summary>
-        /// Modifies a target which is already in the configuration file
+        /// Will save all targets to the base config file.
         /// </summary>
-        /// <param name="target">The target to modify. </param>
-        /// <returns>Returns if the target could be modified successfull.</returns>
-        private bool ModifyTarget(Target target)
+        /// <param name="targets">A List of all current targets.</param>
+        /// <param name="rules">A list of all current rules.</param>
+        public void SaveAll(List<Target> targets, List<LoggingRule> rules)
         {
-            try
+            targets.ForEach(t =>
             {
-                var targetNode = _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "targets")
-                    .Elements()
-                    .SingleOrDefault(x => x.Attribute("name").Value.Equals(target.Name));
+                SaveTarget(t);
+            });
 
-                if (targetNode == null) { return false; }
-
-                return SetAttributes(target, targetNode);
-            }
-            catch (Exception e)
+            rules.ForEach(r =>
             {
-                Console.WriteLine(e.Message);
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Creates a new target in the configuration file. 
-        /// </summary>
-        /// <param name="target">The new target.</param>
-        /// <returns>Returns if the target could be created successfull.</returns>
-        private bool CreateTarget(Target target)
-        {
-            try
-            {
-                //add a new xml node for the target
-                _configFile.Descendants("targets").Last().Add(new XElement("target", new XAttribute("name", "created")));
-                return SetAttributes(target, _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "targets").Elements().SingleOrDefault(x => x.Attribute("name").Value.Equals(target.Name)));
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e.Message);
-                return false;
-            }
+                SaveRule(r);
+            });
         }
 
         /// <summary>
         /// Set the xml Attributes for the target. Xml Attributes are target properties.
         /// </summary>
         /// <param name="target">The target to set the attributes.</param>
-        /// <param name="targetNode">The target (as XElement)</param>
         /// <returns>Returns if the operation was successful or not.</returns>
-        private bool SetAttributes(Target target, XElement targetNode)
+        private bool CreateAndSaveTarget(Target target)
         {
             try
             {
@@ -151,8 +129,13 @@ namespace NLog.Config.ConfigFileOperations
                     }
                 }
 
+                //delete the old target node (if exists)
+                if (_configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "targets").Elements().SingleOrDefault(x => x.Attribute("name").Value.Equals(target.Name)) != null)
+                {
+                    _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "targets").Elements().SingleOrDefault(x => x.Attribute("name").Value.Equals(target.Name)).Remove();
+                }
+
                 //save the modified target to the xml .config file
-                _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "targets").Elements().SingleOrDefault(x => x.Attribute("name").Value.Equals(target.Name)).Remove();
                 _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "targets").Add(elem);
                 _configFile.Save(_filename);
 
@@ -163,6 +146,107 @@ namespace NLog.Config.ConfigFileOperations
                 Console.WriteLine(e.Message);
                 return false;
             }
+        }
+
+        private bool CreateAndSaveRule(LoggingRule rule)
+        {
+            try
+            {
+                //Get all properties with values
+                List<PropertyInfo> properties = PropertyHelper.GetAllReadableProperties(rule.GetType())
+                    .Where(p => p.GetValue(rule) != null && !p.Name.Equals("RuleName")).ToList();
+
+                //Get the namepattern of the rule
+                string name = "";
+                PropertyInfo namepattern = properties.FirstOrDefault(p => p.Name.Equals("LoggerNamePattern"));
+                if (namepattern != null)
+                {
+                    name = namepattern.GetValue(rule).ToString();
+                }
+
+                //Get the log levels for the rule
+                string levels = "";
+                PropertyInfo levelProp = properties.FirstOrDefault(p => p.Name.Equals("Levels"));
+                if (namepattern != null)
+                {
+                    levels = GetRuleLevels(levelProp, rule);
+                }
+
+                //Get the the targets for this rule
+                string writeTo = "";
+                PropertyInfo targetProp = properties.FirstOrDefault(p => p.Name.Equals("Targets"));
+                if (targetProp != null)
+                {
+                    int c = 0;
+                    List<Target> targets = (List<Target>)targetProp.GetValue(rule);
+                    targets.ForEach(t =>
+                    {
+                        if (c == targets.Count - 1)
+                        {
+                            writeTo += t.Name;
+                        }
+                        else
+                        {
+                            writeTo += t.Name + ",";
+                        }
+                        c++;
+                    });
+                }
+
+                //get the name and type property and add them as attribute
+                XElement elem = new XElement(_ns + "logger",
+                        new XAttribute("name", name),
+                        new XAttribute("levels", levels),
+                        new XAttribute("writeTo", writeTo)
+                    );
+
+                //Check if there exists an equal rule in the base config file, if not save the rule
+                if (_configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "logger")
+                    .Elements()
+                    .SingleOrDefault(x =>
+                        x.Attribute("name").Value.Equals(rule.LoggerNamePattern) &&
+                        x.Attribute("").Value.Equals(writeTo) &&
+                        x.Attribute("levels").Value.Equals(levels)) == null)
+                {
+                    _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "logger").Add(elem);
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                return false;
+            }
+        }
+
+        private string GetRuleLevels(PropertyInfo levelsProp, LoggingRule rule)
+        {
+            //cast the object from GetValue to it's type and then convert it into a list
+            List<LogLevel> levels = new List<LogLevel>((ReadOnlyCollection<LogLevel>)levelsProp.GetValue(rule));
+
+            string levelsString = "";
+            int c = 0;
+            //loop every log level and check if there is a max and min level or the levels are specified separately
+            levels.ForEach(l =>
+            {
+                if (c == levels.Count - 1)
+                {
+                    levelsString += l;
+                }
+                else
+                {
+                    levelsString += l + ",";
+                }
+                c++;
+            });
+
+            return levelsString;
+        }
+
+        private bool SetRuleAttributes(LoggingRule rule, XElement ruleNode)
+        {
+            return false;
         }
 
         /// <summary>

@@ -599,16 +599,23 @@ namespace NLog.Config
 
 #if !NETSTANDARD1_3 && !NETSTANDARD1_5 && !NETSTANDARD2_0 && !NET35 && !NET40
         /// <summary>
-        /// Will save the current targets and rules to the base config file.
+        /// Will save the all current targets and rules to the base config file.
         /// </summary>
-        /// <returns>Returns if the save process was successfull or not.</returns>
-        public bool PersitChanges()
+        public void PersistAll()
         {
-            XmlBasedLoggingOperations ops = new XmlBasedLoggingOperations(_originalFileName, AllTargets);
+            XmlBasedLoggingOperations ops = new XmlBasedLoggingOperations(_originalFileName);
+            ops.SaveAll(AllTargets.ToList(), LoggingRules.ToList());
+        }
 
-            //TODO: Remove test code
-            ops.AddTarget(AllTargets[0]);
-            return false;
+        /// <summary>
+        /// Will save a specific target (and only the target) to the base config file.
+        /// </summary>
+        /// <param name="target">The target which should be saved to the config file.</param>
+        /// <returns>Returns if the save process was successful or not.</returns>
+        public bool PersistTarget(Targets.Target target)
+        {
+            XmlBasedLoggingOperations ops = new XmlBasedLoggingOperations(_originalFileName);
+            return ops.SaveTarget(target);
         }
 #endif
     }

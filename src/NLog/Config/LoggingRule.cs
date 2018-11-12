@@ -232,6 +232,7 @@ namespace NLog.Config
                 return levels.AsReadOnly();
             }
         }
+
         /// <summary>
         /// Default action if all filters won't match
         /// </summary>

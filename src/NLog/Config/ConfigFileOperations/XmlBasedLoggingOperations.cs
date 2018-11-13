@@ -201,14 +201,53 @@ namespace NLog.Config.ConfigFileOperations
                     );
 
                 //Check if there exists an equal rule in the base config file, if not save the rule
-                if (_configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "logger")
+                XElement existingRule = _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "rules")
                     .Elements()
                     .SingleOrDefault(x =>
                         x.Attribute("name").Value.Equals(rule.LoggerNamePattern) &&
-                        x.Attribute("").Value.Equals(writeTo) &&
-                        x.Attribute("levels").Value.Equals(levels)) == null)
+                        x.Attribute("writeTo").Value.Equals(writeTo));
+
+                if (existingRule != null)
                 {
-                    _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "logger").Add(elem);
+                    XAttribute specificLevel;
+                    XAttribute minLevel;
+                    XAttribute maxLevel;
+
+                    specificLevel = existingRule.Attributes().FirstOrDefault(a => a.Name.LocalName.ToLower().Equals("levels"));
+                    if (specificLevel != null && specificLevel.Value.Equals(levels))
+                    {
+                        return false;
+                    }
+
+                    minLevel = existingRule.Attributes().FirstOrDefault(a => a.Name.LocalName.ToLower().Equals("minlevel"));
+                    maxLevel = existingRule.Attributes().FirstOrDefault(a => a.Name.LocalName.ToLower().Equals("maxlevel"));
+                    levels = levels.ToLower();
+                    String[] splittedLevels = levels.Split(',');
+                    if ((minLevel != null && maxLevel != null) && splittedLevels.Length == 2 && (minLevel.Value.ToLower().Equals(splittedLevels[0]) && maxLevel.Value.ToLower().Equals(splittedLevels[1])))
+                    {
+                        return false;
+                    }
+                    else if (minLevel != null && splittedLevels.Length >= 1 && minLevel.Name.LocalName.ToLower().Equals("minlevel") && minLevel.Value.ToLower().Equals(splittedLevels[0]))
+                    {
+                        return false;
+                    }
+                    else if (maxLevel != null && splittedLevels.Length >= 1 && maxLevel.Name.LocalName.ToLower().Equals("maxlevel") && maxLevel.Value.ToLower().Equals(splittedLevels[splittedLevels.Length - 1]))
+                    {
+                        return false;
+                    }
+
+                    if (levels.Equals("") && specificLevel == null && minLevel == null && maxLevel == null)
+                    {
+                        return false;
+                    }
+
+                    _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "rules").Add(elem);
+                    _configFile.Save(_filename);
+                }
+                else
+                {
+                    _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "rules").Add(elem);
+                    _configFile.Save(_filename);
                 }
 
                 return true;

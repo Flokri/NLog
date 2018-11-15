@@ -72,16 +72,22 @@ namespace NLog.Config.ConfigFileOperations
         /// <param name="rules">A list of all current rules.</param>
         public void SaveAll(List<Target> targets, List<LoggingRule> rules)
         {
+            RemoveAllTargets();
             targets.ForEach(t =>
             {
                 SaveTarget(t);
             });
 
+            RemoveAllRules();
             rules.ForEach(r =>
             {
                 SaveRule(r);
             });
         }
+
+        private void RemoveAllTargets() => _configFile.Descendants().SingleOrDefault(t => t.Name.LocalName == "targets").RemoveAll();
+
+        private void RemoveAllRules() => _configFile.Descendants().SingleOrDefault(r => r.Name.LocalName == "rules").RemoveAll();
 
         /// <summary>
         /// Set the xml Attributes for the target. Xml Attributes are target properties.

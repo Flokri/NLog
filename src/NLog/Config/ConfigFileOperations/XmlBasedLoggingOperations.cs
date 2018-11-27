@@ -131,7 +131,9 @@ namespace NLog.Config.ConfigFileOperations
                 //Get all properties with values
                 List<PropertyInfo> properties = PropertyHelper.GetAllReadableProperties(target.GetType())
                     .Where(p => p.CustomAttributes.Where(c => c.AttributeType == typeof(ArrayParameterAttribute) ||
-                                                         c.AttributeType == typeof(DefaultValueAttribute)).ToList()
+                                                         c.AttributeType == typeof(DefaultValueAttribute) || 
+                                                         c.AttributeType == typeof(NotPersistableAttribute))
+                                                         .ToList()
                     .Count == 0 && p.GetValue(target) != null && !p.Name.Equals("Name"))
                     .ToList();
 

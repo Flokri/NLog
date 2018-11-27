@@ -424,6 +424,7 @@ namespace NLog.Targets
         /// Gets or sets the file encoding.
         /// </summary>
         /// <docgen category='Layout Options' order='10' />
+        [NotPersistable]
         public Encoding Encoding { get; set; }
 
         /// <summary>

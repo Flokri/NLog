@@ -380,6 +380,19 @@ namespace NLog.Config
         }
 
         /// <summary>
+        /// Add a rule (as logging rule object).
+        /// </summary>
+        /// <param name="rule">The rule you want to add.</param>
+        public void AddRule(LoggingRule rule)
+        {
+            if (rule == null) { throw new ArgumentNullException(nameof(rule)); }
+            AddLoggingRulesThreadSafe(rule);
+            rule.Targets.ToList().ForEach(target => {
+                AddTargetThreadSafe(target.Name, target, false);
+            });
+        }
+
+        /// <summary>
         /// Add a rule for alle loglevels.
         /// </summary>
         /// <param name="targetName">Name of the target to be written when the rule matches.</param>

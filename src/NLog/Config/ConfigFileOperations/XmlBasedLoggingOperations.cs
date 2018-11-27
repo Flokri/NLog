@@ -1,24 +1,22 @@
-﻿using System.Runtime.CompilerServices;
-
-#if !NETSTANDARD1_3 && !NETSTANDARD1_5 && !NETSTANDARD2_0 && !NET35 && !NET40
+﻿#if !NETSTANDARD1_3 && !NETSTANDARD1_5 && !NETSTANDARD2_0 && !NET35 && !NET40
 namespace NLog.Config.ConfigFileOperations
 {
+    using NLog.Common;
+    using NLog.Internal;
+    using NLog.Targets;
     using System;
-    using System.Linq;
-    using System.Xml.Linq;
-    using System.Reflection;
     using System.Collections.Generic;
     using System.Collections.ObjectModel;
-
-    using NLog.Config;
-    using NLog.Targets;
-    using NLog.Internal;
+    using System.ComponentModel;
+    using System.Linq;
+    using System.Reflection;
+    using System.Xml.Linq;
 
     class XmlBasedLoggingOperations
     {
         private XDocument _configFile;
         private String _filename;
-        private XNamespace _ns;
+        private readonly XNamespace _ns;
 
         /// <summary>
         /// Load the xml config file into a new XDcument and set the correct namespace for the config file. 
@@ -90,6 +88,38 @@ namespace NLog.Config.ConfigFileOperations
         private void RemoveAllRules() => _configFile.Descendants().SingleOrDefault(r => r.Name.LocalName == "rules").RemoveAll();
 
         /// <summary>
+        /// Converts input to Type of default value or given as typeparam T
+        /// </summary>
+        /// <typeparam name="T">typeparam is the type in which value will be returned, it could be any type eg. int, string, bool, decimal etc.</typeparam>
+        /// <param name="input">Input that need to be converted to specified type</param>
+        /// <param name="value">defaultValue will be returned in case of value is null or any exception occures</param>
+        /// <returns>Input is converted in Type of default value or given as typeparam T and returned</returns>
+        public T To<T>(object input, T value)
+        {
+            var result = value;
+            try
+            {
+                if (input == null || input == DBNull.Value)
+                    return result;
+                if (typeof(T).IsEnum)
+                {
+                    result = (T)Enum.ToObject(typeof(T), To(input, Convert.ToInt32(value)));
+                }
+                else
+                {
+                    result = (T)Convert.ChangeType(input, typeof(T));
+                }
+            }
+            catch (Exception e)
+            {
+                InternalLogger.Error(e.Message);
+            }
+
+            return result;
+        }
+
+
+        /// <summary>
         /// Set the xml Attributes for the target. Xml Attributes are target properties.
         /// </summary>
         /// <param name="target">The target to set the attributes.</param>
@@ -100,7 +130,28 @@ namespace NLog.Config.ConfigFileOperations
             {
                 //Get all properties with values
                 List<PropertyInfo> properties = PropertyHelper.GetAllReadableProperties(target.GetType())
-                    .Where(p => p.CustomAttributes.Where(c => c.AttributeType == typeof(ArrayParameterAttribute)).ToList().Count == 0 && p.GetValue(target) != null && !p.Name.Equals("Name")).ToList();
+                    .Where(p => p.CustomAttributes.Where(c => c.AttributeType == typeof(ArrayParameterAttribute) ||
+                                                         c.AttributeType == typeof(DefaultValueAttribute)).ToList()
+                    .Count == 0 && p.GetValue(target) != null && !p.Name.Equals("Name"))
+                    .ToList();
+
+                //get all default properties which does not equal to the default (initial) value
+                List<PropertyInfo> changedDefaultProperties = new List<PropertyInfo>();
+                PropertyHelper.GetAllReadableProperties(target.GetType()).Where(p => p.CustomAttributes.Where(c => c.AttributeType == typeof(DefaultValueAttribute)).ToList().Count() > 0)
+                    .ToList()
+                    .ForEach(p =>
+                    {
+                     CustomAttributeTypedArgument data = p.CustomAttributes.First(c => c.AttributeType == typeof(DefaultValueAttribute)).ConstructorArguments[0];
+
+                        MethodInfo method = typeof(XmlBasedLoggingOperations).GetMethod("To");
+                        MethodInfo generic = method.MakeGenericMethod(data.ArgumentType);
+
+
+                        if (!p.GetValue(target).Equals(generic.Invoke(this, new object[] { data.Value, null })))
+                        {
+                            changedDefaultProperties.Add(p);
+                        }
+                    });
 
                 //filter out all array params
                 List<PropertyInfo> arrayParams = PropertyHelper.GetAllReadableProperties(target.GetType())
@@ -172,7 +223,8 @@ namespace NLog.Config.ConfigFileOperations
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine(e);
+                    //write the exception to the internal log
+                    InternalLogger.Error(e.Message);
                     continue;
                 }
             }
@@ -214,12 +266,21 @@ namespace NLog.Config.ConfigFileOperations
 
 
                 //Check if there exists an equal rule in the base config file, if not save the rule
-                XElement existingRule = _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "rules")
+                List<XElement> existingRules = _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "rules")
                     .Elements()
-                    .SingleOrDefault(x =>
+                    .Where(x =>
                         x.Attribute("name").Value.Equals(rule.LoggerNamePattern) &&
-                        x.Attribute("writeTo").Value.Equals(writeTo));
-                CheckIfRuleExists(existingRule, elem, levels);
+                        x.Attribute("writeTo").Value.Equals(writeTo) &&
+                        x.Attribute("levels").Value.Equals(levels)).ToList();
+                //TODO implement a better check when needed 
+                //CheckIfRuleExists(existingRules, elem, levels);
+
+                //only save when not available
+                if (existingRules == null || existingRules.Count == 0)
+                {
+                    _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "rules").Add(elem);
+                    _configFile.Save(_filename);
+                }
 
                 return true;
             }
@@ -233,45 +294,48 @@ namespace NLog.Config.ConfigFileOperations
         /// <summary>
         /// Checks if there exists an equal rule in the xml config file.
         /// </summary>
-        /// <param name="existingRule">The rule that seems like its the sama eas the one you like to persist.</param>
+        /// <param name="existingRules">The rule that seems like its the sama eas the one you like to persist.</param>
         /// <param name="newRule">The rule you want to persist.</param>
         /// <param name="levels">A String contains all the log levels the rule should log to. (the levels have to be seperatet by ',' like "Info,Error")</param>
         /// <returns>Returns if the new rule was saved (true) or not (false).</returns>
-        private bool CheckIfRuleExists(XElement existingRule, XElement newRule, String levels)
+        private bool CheckIfRuleExists(List<XElement> existingRules, XElement newRule, String levels)
         {
-            if (existingRule != null)
+            if (existingRules != null && existingRules.Count() > 0)
             {
-                XAttribute specificLevel;
-                XAttribute minLevel;
-                XAttribute maxLevel;
+                foreach (XElement existingRule in existingRules)
+                {
+                    XAttribute specificLevel;
+                    XAttribute minLevel;
+                    XAttribute maxLevel;
 
-                specificLevel = existingRule.Attributes().FirstOrDefault(a => a.Name.LocalName.ToLower().Equals("levels"));
-                if (specificLevel != null && specificLevel.Value.Equals(levels))
-                {
-                    return false;
-                }
+                    specificLevel = existingRule.Attributes().FirstOrDefault(a => a.Name.LocalName.ToLower().Equals("levels"));
+                    if (specificLevel != null && specificLevel.Value.Equals(levels))
+                    {
+                        return false;
+                    }
 
-                //checks every combination of log levels
-                minLevel = existingRule.Attributes().FirstOrDefault(a => a.Name.LocalName.ToLower().Equals("minlevel"));
-                maxLevel = existingRule.Attributes().FirstOrDefault(a => a.Name.LocalName.ToLower().Equals("maxlevel"));
-                levels = levels.ToLower();
-                String[] splittedLevels = levels.Split(',');
-                if ((minLevel != null && maxLevel != null) && splittedLevels.Length == 2 && (minLevel.Value.ToLower().Equals(splittedLevels[0]) && maxLevel.Value.ToLower().Equals(splittedLevels[1])))
-                {
-                    return false;
-                }
-                else if (minLevel != null && splittedLevels.Length >= 1 && minLevel.Name.LocalName.ToLower().Equals("minlevel") && minLevel.Value.ToLower().Equals(splittedLevels[0]))
-                {
-                    return false;
-                }
-                else if (maxLevel != null && splittedLevels.Length >= 1 && maxLevel.Name.LocalName.ToLower().Equals("maxlevel") && maxLevel.Value.ToLower().Equals(splittedLevels[splittedLevels.Length - 1]))
-                {
-                    return false;
-                }
+                    //checks every combination of log levels
+                    minLevel = existingRule.Attributes().FirstOrDefault(a => a.Name.LocalName.ToLower().Equals("minlevel"));
+                    maxLevel = existingRule.Attributes().FirstOrDefault(a => a.Name.LocalName.ToLower().Equals("maxlevel"));
+                    levels = levels.ToLower();
+                    String[] splittedLevels = levels.Split(',');
+                    if ((minLevel != null && maxLevel != null) && splittedLevels.Length == 2 && (minLevel.Value.ToLower().Equals(splittedLevels[0]) && maxLevel.Value.ToLower().Equals(splittedLevels[1])))
+                    {
+                        return false;
+                    }
+                    //else if (minLevel != null && splittedLevels.Length >= 1 && minLevel.Name.LocalName.ToLower().Equals("minlevel") && minLevel.Value.ToLower().Equals(splittedLevels[0]))
+                    //{
+                    //    return false;
+                    //}
+                    //else if (maxLevel != null && splittedLevels.Length >= 1 && maxLevel.Name.LocalName.ToLower().Equals("maxlevel") && maxLevel.Value.ToLower().Equals(splittedLevels[splittedLevels.Length - 1]))
+                    //{
+                    //    return false;
+                    //}
 
-                if (levels.Equals("") && specificLevel == null && minLevel == null && maxLevel == null)
-                {
-                    return false;
+                    if (levels.Equals("") && specificLevel == null && minLevel == null && maxLevel == null)
+                    {
+                        return false;
+                    }
                 }
 
                 _configFile.Descendants().SingleOrDefault(p => p.Name.LocalName == "rules").Add(newRule);

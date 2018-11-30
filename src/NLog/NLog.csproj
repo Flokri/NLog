@@ -277,6 +277,7 @@ Supported for each platform: https://github.com/NLog/NLog/wiki/platform-support
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\NLog.ico" />
+    <Reference Include="System.Security" />
     <Reference Include="System.Xml.Linq" />
 
     <None Update="Common\InternalLogger-generated.tt">

@@ -241,6 +241,7 @@ namespace NLog.Targets
         /// </summary>
         /// <docgen category='Message Options' order='20' />
         [DefaultValue("UTF8")]
+        [NotPersistable]
         public Encoding Encoding { get; set; }
 
         /// <summary>

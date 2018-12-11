@@ -12,11 +12,19 @@ namespace NLog.LayoutRenderers
     [LayoutRenderer("decrypt")]
     public class DecryptRenderer : LayoutRenderer
     {
+        private string _cipher = "";
         /// <summary>
         /// Holds the cipher text.
         /// </summary>
         [RequiredParameter]
-        public string Cipher { get; set; }
+        public string Cipher
+        {
+            get
+            {
+                return DecryptUsingDPAPI();
+            }
+            set => _cipher = value;
+        }
 
         /// <summary>
         /// Append the decrypted string.
@@ -25,21 +33,21 @@ namespace NLog.LayoutRenderers
         /// <param name="logEvent"></param>
         protected override void Append(StringBuilder builder, LogEventInfo logEvent)
         {
-            builder.Append(DecyptUsingDPAPI());
+            builder.Append(DecryptUsingDPAPI());
         }
 
         /// <summary>
         /// Decrypts a string using the user dpapi controller.
         /// </summary>
         /// <returns></returns>
-        private string DecyptUsingDPAPI()
+        private string DecryptUsingDPAPI()
         {
-            if (String.IsNullOrEmpty(Cipher))
+            if (String.IsNullOrEmpty(_cipher))
             {
                 return "";
             }
 
-            byte[] enryptedBytes = Convert.FromBase64String(Cipher);
+            byte[] enryptedBytes = Convert.FromBase64String(_cipher);
             byte[] decrypted = ProtectedData.Unprotect(enryptedBytes, null, DataProtectionScope.CurrentUser);
 
             return Encoding.UTF8.GetString(decrypted);

@@ -81,6 +81,8 @@ namespace NLog.Config.ConfigFileOperations
             {
                 SaveRule(r);
             });
+
+            _configFile.Save(_filename);
         }
 
         private void RemoveAllTargets() => _configFile.Descendants().SingleOrDefault(t => t.Name.LocalName == "targets").RemoveAll();
@@ -128,6 +130,9 @@ namespace NLog.Config.ConfigFileOperations
         {
             try
             {
+
+                List<PropertyInfo> test = target.GetType().GetProperties().ToList();
+
                 //Get all properties with values
                 List<PropertyInfo> properties = PropertyHelper.GetAllReadableProperties(target.GetType())
                     .Where(p => p.CustomAttributes.Where(c => c.AttributeType == typeof(ArrayParameterAttribute) ||
@@ -143,15 +148,20 @@ namespace NLog.Config.ConfigFileOperations
                     .ToList()
                     .ForEach(p =>
                     {
-                     CustomAttributeTypedArgument data = p.CustomAttributes.First(c => c.AttributeType == typeof(DefaultValueAttribute)).ConstructorArguments[0];
 
-                        MethodInfo method = typeof(XmlBasedLoggingOperations).GetMethod("To");
-                        MethodInfo generic = method.MakeGenericMethod(data.ArgumentType);
-
-
-                        if (!p.GetValue(target).Equals(generic.Invoke(this, new object[] { data.Value, null })))
+                        if (p.CustomAttributes.FirstOrDefault(c => c.AttributeType == typeof(NotPersistableAttribute)) == null)
                         {
-                            changedDefaultProperties.Add(p);
+                            CustomAttributeTypedArgument data = p.CustomAttributes.First(c => c.AttributeType == typeof(DefaultValueAttribute)).ConstructorArguments[0];
+
+                            MethodInfo method = typeof(XmlBasedLoggingOperations).GetMethod("To");
+                            MethodInfo generic = method.MakeGenericMethod(data.ArgumentType);
+
+                            var result = generic.Invoke(this, new object[] { data.Value, null });
+
+                            if (result != null && !p.GetValue(target).Equals(result))
+                            {
+                                changedDefaultProperties.Add(p);
+                            }
                         }
                     });
 
@@ -170,6 +180,8 @@ namespace NLog.Config.ConfigFileOperations
 
                 //add the properties to the target node (as attributes) (except name and type)
                 foreach (PropertyInfo property in properties) { elem.Add(new XElement(_ns + property.Name, GetClearedPropertyValues(property.GetValue(target)))); }
+                //add the changed default properties to the target node (as attributes)
+                foreach (PropertyInfo property in changedDefaultProperties) { elem.Add(new XElement(_ns + property.Name, GetClearedPropertyValues(property.GetValue(target)))); }
 
                 //set the array param properties
                 SetTargetArrayParam(target, arrayParams, ref elem);

@@ -7,7 +7,7 @@
 
     <Title>NLog for .NET Framework and .NET Standard</Title>
     <Company>NLog</Company>
-    <Description>NLog is a logging platform for .NET with rich log routing and management capabilities.
+    <Description>NLog-Extended is a logging platform for .NET with rich log routing and management capabilities.
 NLog supports traditional logging, structured logging and the combination of both.
 
 Supported platforms:
@@ -25,7 +25,7 @@ For ASP.NET Core, check: https://www.nuget.org/packages/NLog.Web.AspNetCore
     
     
     </Description>
-    <Product>NLog v$(ProductVersion)</Product>
+    <Product>NLog-Extended v$(ProductVersion)</Product>
     <InformationalVersion>$(ProductVersion)</InformationalVersion>
     <Authors>Jarek Kowalski,Kim Christensen,Julian Verdurmen</Authors>
     <CurrentYear>$([System.DateTime]::Now.ToString(yyyy))</CurrentYear>
@@ -50,7 +50,7 @@ Supported for each platform: https://github.com/NLog/NLog/wiki/platform-support
     <RepositoryUrl>https://github.com/NLog/NLog.git</RepositoryUrl>
 
     <SignAssembly>true</SignAssembly>
-    <AssemblyVersion>4.0.0.0</AssemblyVersion>
+    <AssemblyVersion>4.0.1.0</AssemblyVersion>
     <AssemblyOriginatorKeyFile>..\NLog.snk</AssemblyOriginatorKeyFile>
     <PublicSign Condition=" '$(OS)' != 'Windows_NT' ">true</PublicSign>
 

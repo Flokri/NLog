@@ -130,9 +130,6 @@ namespace NLog.Config.ConfigFileOperations
         {
             try
             {
-
-                List<PropertyInfo> test = target.GetType().GetProperties().ToList();
-
                 //Get all properties with values
                 List<PropertyInfo> properties = PropertyHelper.GetAllReadableProperties(target.GetType())
                     .Where(p => p.CustomAttributes.Where(c => c.AttributeType == typeof(ArrayParameterAttribute) ||

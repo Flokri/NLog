@@ -617,6 +617,36 @@ namespace NLog.Config
             XmlBasedLoggingOperations ops = new XmlBasedLoggingOperations(_originalFileName);
             return ops.SaveTarget(target);
         }
+
+        /// <summary>
+        /// Create a new xml config file in case there is none or you want to override the old one.
+        /// </summary>
+        /// <param name="filename">The file name of the new config file (fullname).</param>
+        /// <returns>Returns if the create process was succesfull.</returns>
+        public bool CreateNewConfigFile(string filename)
+        {
+            try
+            {
+                XmlDocument doc = new XmlDocument();
+                doc.LoadXml("<?xml version=\"1.0\" encoding=\"utf - 8\"?>" +
+                    "<nlog xmlns=\"http://www.nlog-project.org/schemas/NLog.xsd\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"> " +
+                    "<targets></targets>" +
+                    "<rules></rules>" +
+                    "</nlog>");
+
+                XmlTextWriter writer = new XmlTextWriter(filename, null);
+                writer.Formatting = Formatting.Indented;
+                doc.Save(writer);
+
+                return true;
+            }
+            catch(Exception e)
+            {
+                InternalLogger.Error(e, e.Message);
+
+                return false;
+            }
+        }
 #endif
     }
 }
